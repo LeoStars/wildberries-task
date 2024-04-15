@@ -1,38 +1,39 @@
 package app
 
 import (
-	"encoding/json"
-	"fmt"
+	c "github.com/LeoStars/wildberries-task/internal/cache"
 	"github.com/LeoStars/wildberries-task/internal/database"
 	"github.com/LeoStars/wildberries-task/internal/models"
-	"io/ioutil"
-	"os"
+	"github.com/LeoStars/wildberries-task/internal/server"
+	"github.com/LeoStars/wildberries-task/internal/streaming"
+	"log"
+	"net/http"
 )
 
 func Run() {
-	jsonFile, err := os.Open("models.json")
+	orders := make(map[string]models.Order)
+	cache := c.Cache{Orders: orders}
+
+	databaseOrders, err := database.GetOrdersFromDB()
 	if err != nil {
-		fmt.Println(err)
+		log.Fatalf("Could not get orders from database: %s", err)
 	}
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	var order models.Order
-	err = json.Unmarshal(byteValue, &order)
-	if err != nil {
-		fmt.Println(err)
+	for _, databaseOrder := range databaseOrders {
+		cache.Set(databaseOrder.OrderUid, databaseOrder)
 	}
 
-	err = database.WriteOrderToDB(order)
+	nc, err := streaming.Connect()
 	if err != nil {
-		panic(err)
+		log.Fatalf("Could not connect to NATS: %s", err)
 	}
 
-	err = database.GetOrdersFromDB()
+	defer nc.Close()
+
+	err = streaming.Subscribe(nc, &cache)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Could not subscribe to NATS: %s", err)
 	}
 
-	err = database.DropOrderFromDB("b563feb7b284b6test")
-	if err != nil {
-		panic(err)
-	}
+	server.HttpHandlersStart(&cache)
+	defer log.Fatal(http.ListenAndServe(":8080", nil))
 }

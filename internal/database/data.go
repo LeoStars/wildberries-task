@@ -9,7 +9,7 @@ import (
 
 const (
 	host     = "localhost"
-	port     = 5433
+	port     = 5432
 	user     = "postgres"
 	password = "postgres"
 	dbname   = "wildberries"
@@ -72,18 +72,18 @@ func WriteOrderToDB(order models.Order) error {
 	return nil
 }
 
-func GetOrdersFromDB() error {
+func GetOrdersFromDB() ([]models.Order, error) {
 	databaseInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 	db, err := sql.Open("postgres", databaseInfo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer db.Close()
 
 	rows, err := db.Query("SELECT * FROM orders")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -100,37 +100,37 @@ func GetOrdersFromDB() error {
 			&order.InternalSignature, &order.CustomerId, &order.DeliveryService, &order.Shardkey,
 			&order.SmId, &order.DateCreated, &order.OofShard, &deliveryId, &paymentId)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		rowDelivery, err := db.Query("SELECT * FROM delivery WHERE id = $1", deliveryId)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rowDelivery.Next()
 		err = rowDelivery.Scan(&deliveryId, &delivery.Name, &delivery.Phone, &delivery.Zip, &delivery.City,
 			&delivery.Address, &delivery.Region, &delivery.Email)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rowDelivery.Close()
 
 		rowPayment, err := db.Query("SELECT * FROM payment WHERE id = $1", paymentId)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rowPayment.Next()
 		err = rowPayment.Scan(&payment.RequestId, &payment.Currency, &payment.Provider, &payment.Amount,
 			&payment.PaymentDt, &payment.Bank, &payment.DeliveryCost, &payment.GoodsTotal, &payment.CustomFee,
 			&paymentId, &payment.Transaction)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rowPayment.Close()
 
 		rowsItems, err := db.Query("SELECT * FROM items WHERE order_id = $1", order.OrderUid)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for rowsItems.Next() {
 			var item models.Item
@@ -140,7 +140,7 @@ func GetOrdersFromDB() error {
 				&item.Name, &item.Sale, &item.Size, &item.TotalPrice, &item.NmId,
 				&item.Brand, &item.Status, &orderId)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			items = append(items, item)
 		}
@@ -150,10 +150,7 @@ func GetOrdersFromDB() error {
 		order.Items = items
 		orders = append(orders, order)
 	}
-
-	fmt.Println("Successfully got orders!")
-	fmt.Println(orders)
-	return nil
+	return orders, nil
 }
 
 func DropOrderFromDB(orderId string) error {
